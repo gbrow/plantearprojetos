@@ -485,27 +485,27 @@ def show_overview(df):
     st.plotly_chart(fig_prop, use_container_width=True)
     
     # Atividades
-    st.subheader("📋 Atividades Mais Frequentes")
-    all_activities = []
-    for acts in df["Atividades"]:
-        if isinstance(acts, list):
-            all_activities.extend(acts)
-        elif isinstance(acts, str) and acts:
-            all_activities.extend([a.strip().lower() for a in acts.split(',')])
+    # st.subheader("📋 Atividades Mais Frequentes")
+    # all_activities = []
+    # for acts in df["Atividades"]:
+    #     if isinstance(acts, list):
+    #         all_activities.extend(acts)
+    #     elif isinstance(acts, str) and acts:
+    #         all_activities.extend([a.strip().lower() for a in acts.split(',')])
     
-    if all_activities:
-        activity_counts = Counter(all_activities).most_common(15)
-        act_df = pd.DataFrame(activity_counts, columns=["Atividade", "Frequência"])
-        fig_act = px.bar(
-            act_df,
-            x="Atividade",
-            y="Frequência",
-            title="Atividades mais recorrentes nos projetos",
-            color="Frequência",
-            color_continuous_scale="Purples"
-        )
-        fig_act.update_layout(xaxis_tickangle=-45, height=450)
-        st.plotly_chart(fig_act, use_container_width=True)
+    # if all_activities:
+    #     activity_counts = Counter(all_activities).most_common(15)
+    #     act_df = pd.DataFrame(activity_counts, columns=["Atividade", "Frequência"])
+    #     fig_act = px.bar(
+    #         act_df,
+    #         x="Atividade",
+    #         y="Frequência",
+    #         title="Atividades mais recorrentes nos projetos",
+    #         color="Frequência",
+    #         color_continuous_scale="Purples"
+    #     )
+    #     fig_act.update_layout(xaxis_tickangle=-45, height=450)
+    #     st.plotly_chart(fig_act, use_container_width=True)
     
     # Complexidade
     st.subheader("📊 Métricas de Complexidade por Projeto")
