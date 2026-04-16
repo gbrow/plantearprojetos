@@ -491,7 +491,7 @@ def show_overview(df):
         if isinstance(acts, list):
             all_activities.extend(acts)
         elif isinstance(acts, str) and acts:
-            all_activities.extend([a.strip().lower() for a in acts.split(';')])
+            all_activities.extend([a.strip().lower() for a in acts.split(',')])
     
     if all_activities:
         activity_counts = Counter(all_activities).most_common(15)
