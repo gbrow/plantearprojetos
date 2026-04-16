@@ -8,6 +8,8 @@ from datetime import datetime
 from collections import Counter
 import requests
 from io import StringIO
+import json
+import ast
 
 # Configuração da página
 st.set_page_config(page_title="Painel de Projetos - PLANTEAR", layout="wide")
@@ -18,22 +20,18 @@ st.set_page_config(page_title="Painel de Projetos - PLANTEAR", layout="wide")
 def carregar_csv_github():
     """
     Carrega o arquivo CSV diretamente do GitHub usando Raw URL
-    Atualiza automaticamente a cada 1 hora (ttl=3600 segundos)
     """
     
     # ⚠️ SUBSTITUA ESTA URL PELA URL RAW DO SEU CSV NO GITHUB ⚠️
     URL_CSV = "https://raw.githubusercontent.com/gbrow/plantearprojetos/main/dados/projetos.csv"
     
     try:
-        # Baixar o arquivo
         response = requests.get(URL_CSV)
         response.raise_for_status()
         
-        # Converter para DataFrame
         content = StringIO(response.text)
         df = pd.read_csv(content, encoding='utf-8')
         
-        # Processar os dados
         df = processar_dados(df)
         
         st.success("✅ Dados carregados com sucesso do GitHub!")
@@ -44,14 +42,64 @@ def carregar_csv_github():
         st.info("Usando dados de exemplo...")
         return criar_dados_exemplo()
 
+def converter_para_lista(valor):
+    """
+    Converte diferentes formatos de string para lista Python
+    """
+    if pd.isna(valor) or valor == "" or valor == "[]":
+        return []
+    
+    if isinstance(valor, list):
+        return valor
+    
+    if isinstance(valor, str):
+        valor = valor.strip()
+        
+        # Tenta converter como JSON (formato ["item1", "item2"])
+        if valor.startswith('[') and valor.endswith(']'):
+            try:
+                # Tenta JSON primeiro
+                return json.loads(valor)
+            except:
+                try:
+                    # Tenta ast.literal_eval
+                    return ast.literal_eval(valor)
+                except:
+                    # Remove colchetes e aspas manualmente
+                    valor_limpo = valor.strip('[]')
+                    if valor_limpo:
+                        items = [item.strip().strip('"').strip("'") for item in valor_limpo.split(',')]
+                        return [item for item in items if item]
+                    return []
+        
+        # Formato com ponto e vírgula "item1;item2;item3"
+        if ';' in valor:
+            return [item.strip() for item in valor.split(';') if item.strip()]
+        
+        # Formato com vírgula "item1, item2, item3"
+        if ',' in valor:
+            return [item.strip() for item in valor.split(',') if item.strip()]
+        
+        # Valor único
+        return [valor] if valor else []
+    
+    return []
+
 def processar_dados(df):
     """Processa e limpa os dados do DataFrame"""
     
-    # Renomear colunas se necessário
+    # Dicionário de mapeamento de colunas (português -> inglês simplificado)
     mapeamento = {
+        'ID': 'ID',
+        'Projeto': 'Projeto',
         'Descrição do projeto': 'Descrição',
+        'Descrição': 'Descrição',
+        'Equipe': 'Equipe',
+        'Coordenação': 'Coordenação',
         'Previsão de início do projeto': 'Previsão de início',
+        'Previsão de início': 'Previsão de início',
         'Previsão de término do projeto': 'Previsão de término',
+        'Previsão de término': 'Previsão de término',
         'Quantidade de pessoas da graduação necessárias': 'Qtd_Graduacao',
         'Quantidade de pessoas da pós-graduação necessárias': 'Qtd_Pos',
         'Quantidade de pessoas docentes necessárias': 'Qtd_Docentes',
@@ -59,9 +107,24 @@ def processar_dados(df):
         'Áreas do conhecimento indispensáveis ao projeto': 'Áreas',
         'Atividades a serem promovidas no projeto': 'Atividades',
         'Fonte de recursos do projeto': 'Fonte_Recurso',
-        'Produção técnica e acadêmica prevista no projeto': 'Produção'
+        'Fonte de recurso': 'Fonte_Recurso',
+        'Produção técnica e acadêmica prevista no projeto': 'Produção',
+        'Localização': 'Localização'
     }
-    df.rename(columns=mapeamento, inplace=True)
+    
+    # Aplicar mapeamento apenas para colunas que existem
+    colunas_renomear = {k: v for k, v in mapeamento.items() if k in df.columns}
+    df.rename(columns=colunas_renomear, inplace=True)
+    
+    # Garantir colunas essenciais
+    colunas_essenciais = ['Projeto', 'Descrição', 'Equipe', 'Coordenação', 
+                          'Previsão de início', 'Previsão de término', 
+                          'Qtd_Graduacao', 'Qtd_Pos', 'Qtd_Docentes',
+                          'Habilidades', 'Áreas', 'Atividades', 'Fonte_Recurso', 'Produção']
+    
+    for col in colunas_essenciais:
+        if col not in df.columns:
+            df[col] = None
     
     # Processar datas
     if 'Previsão de início' in df.columns:
@@ -74,13 +137,13 @@ def processar_dados(df):
     else:
         df['termino_date'] = pd.NaT
     
-    # Converter strings para listas
-    for col in ['Habilidades', 'Áreas', 'Atividades', 'Produção']:
+    # Converter colunas de lista
+    colunas_lista = ['Habilidades', 'Áreas', 'Atividades', 'Produção']
+    for col in colunas_lista:
         if col in df.columns:
-            df[col] = df[col].apply(
-                lambda x: [item.strip().strip('"').strip('[]') for item in str(x).split(';')] 
-                if pd.notna(x) and str(x).strip() else []
-            )
+            df[col] = df[col].apply(converter_para_lista)
+        else:
+            df[col] = [[] for _ in range(len(df))]
     
     # Garantir que colunas numéricas são números
     for col in ['Qtd_Graduacao', 'Qtd_Pos', 'Qtd_Docentes']:
@@ -89,9 +152,28 @@ def processar_dados(df):
         else:
             df[col] = 0
     
-    # Garantir coluna Fonte_Recurso
-    if 'Fonte_Recurso' not in df.columns:
+    # Garantir que Equipe e Coordenação são strings
+    if 'Equipe' in df.columns:
+        df['Equipe'] = df['Equipe'].fillna('').astype(str)
+    else:
+        df['Equipe'] = ''
+    
+    if 'Coordenação' in df.columns:
+        df['Coordenação'] = df['Coordenação'].fillna('').astype(str)
+    else:
+        df['Coordenação'] = ''
+    
+    # Garantir Fonte_Recurso
+    if 'Fonte_Recurso' in df.columns:
+        df['Fonte_Recurso'] = df['Fonte_Recurso'].fillna('Não informada').astype(str)
+    else:
         df['Fonte_Recurso'] = 'Não informada'
+    
+    # Garantir Descrição
+    if 'Descrição' in df.columns:
+        df['Descrição'] = df['Descrição'].fillna('').astype(str)
+    else:
+        df['Descrição'] = ''
     
     return df
 
@@ -139,50 +221,64 @@ def criar_dados_exemplo():
         "Qtd_Docentes": [1, 2, 3, 0, 1, 0],
         "Fonte_Recurso": ["Recurso da Itaipu", "Emenda parlamentar", "Emenda parlamentar", "Emenda parlamentar", "Emenda parlamentar", "Emenda parlamentar"],
         "Habilidades": [
-            ["Geoprocessamento", "Diagramação", "Oficinas"],
-            ["Geoprocessamento", "Análise ambiental", "Zoneamento", "Oficinas"],
-            ["Geoprocessamento", "Análise ambiental", "Regularização fundiária", "Oficinas"],
-            ["Geoprocessamento", "Análise ambiental", "Regularização fundiária", "Oficinas"],
-            ["Geoprocessamento", "Regularização fundiária", "Oficinas", "Cadastro"],
-            ["Geoprocessamento", "Análise ambiental", "Regularização fundiária", "Oficinas"]
+            '["Tratamento e análise de dados secundários","Elaboração de material teórico","Produção de pranchas e desenhos arquitetônicos","Geoprocessamento","Criação e desenvolvimento de oficinas","Diagramação"]',
+            '["Análise socioeconômica","Zoneamento","Análise ambiental","Parcelamento do solo","Produção de pranchas e desenhos arquitetônicos","Geoprocessamento","Aerolevantamento com drone","Pesquisas agronômicas","Topografia","Criação e desenvolvimento de oficinas","Diagramação","Tratamento e análise de dados secundários"]',
+            '["Análise socioeconômica","Tratamento e análise de dados secundários","Regularização fundiária","Regularização urbanística","Análise de risco","Análise ambiental","Geoprocessamento","Pesquisas agronômicas","Topografia","Parcelamento do solo","Desenho urbanístico","Diagramação","Criação e desenvolvimento de oficinas","Produção de pranchas e desenhos arquitetônicos"]',
+            '["Tratamento e análise de dados secundários","Elaboração de material teórico","Análise ambiental","Criação e desenvolvimento de oficinas","Diagramação","Análise socioeconômica","Parcelamento do solo","Aerolevantamento com drone","Tecnologia da informação","Geoprocessamento","Produção de pranchas e desenhos arquitetônicos"]',
+            '["Análise socioeconômica","Tratamento e análise de dados secundários","Elaboração de material teórico","Regularização fundiária","Regularização urbanística","Cadastro","Geoprocessamento","Aerolevantamento com drone","Tecnologia da informação","Criação e desenvolvimento de oficinas","Diagramação"]',
+            '["Tratamento e análise de dados secundários","Elaboração de material teórico","Análise ambiental","Parcelamento do solo","Produção de pranchas e desenhos arquitetônicos","Geoprocessamento","Aerolevantamento com drone","Tecnologia da informação","Criação e desenvolvimento de oficinas","Diagramação"]'
         ],
         "Áreas": [
-            ["Geografia", "Arquitetura"],
-            ["Geografia", "Arquitetura", "Engenharia Ambiental"],
-            ["Geografia", "Arquitetura", "Direito", "Engenharia Ambiental"],
-            ["Geografia", "Arquitetura", "Direito", "Engenharia Ambiental"],
-            ["Geografia", "Arquitetura", "Direito"],
-            ["Geografia", "Arquitetura", "Engenharia Ambiental", "Design"]
+            '["Geografia","Arquitetura e Urbanismo"]',
+            '["Arquitetura e Urbanismo","Geografia","Engenharia Agronômica","Engenharia Ambiental"]',
+            '["Ciências Sociais","Direito","Arquitetura e Urbanismo","Geografia","Engenharia Ambiental"]',
+            '["Arquitetura e Urbanismo","Geografia","Engenharia Ambiental","Engenharia Cartográfica e Ambiental","Engenharia Civil","Direito"]',
+            '["Geografia","Arquitetura e Urbanismo","Engenharia Civil","Direito"]',
+            '["Arquitetura e Urbanismo","Geografia","Engenharia Ambiental","Engenharia Cartográfica e Ambiental","Engenharia Civil","Design Gráfico"]'
         ],
         "Atividades": [
-            ["Oficinas", "Geoprocessamento", "Cartografia social"],
-            ["Oficinas", "Geoprocessamento", "Diagnóstico", "Reuniões"],
-            ["Oficinas", "Geoprocessamento", "Levantamento", "Análise"],
-            ["Oficinas", "Geoprocessamento", "Regularização"],
-            ["Oficinas", "Formação", "Cadastramento"],
-            ["Oficinas", "Geoprocessamento", "Minicurso"]
+            "Oficinas comunitárias;cartografias sociais;geoprocessamento;registro e sistematização;levantamento e sistematização de dados;produção de newsletter;site interativo;realização de eventos estratégicos",
+            "10 oficinas;geoprocessamento;registro e sistematização;planejamento de reuniões internas;reuniões com coordenação do assentamento e INCRA;análise das cadeias produtivas;diagnóstico socioeconômicos;revisão e análise das políticas de reforma agrária",
+            "Caracterização da biodiversidade;Levantamento de APAs e APPs;Identificação de nascentes;Georrefenciamento;análises socioespaciais;Levantamento de uso e ocupação do solo;análise fundiária;proposta de desenho e reajuste de terras",
+            "Oficinas",
+            "Formação comunitária sobre REURB;formação de cadastradores;aplicação de questionários;integração de dados a SIG",
+            "Oficinas;minicurso"
         ],
         "Produção": [
-            ["Livro", "Mapa", "Materiais digitais"],
-            ["Artigo", "Mapa", "Plano", "Cartilha"],
-            ["Dossiê", "Mapa", "Plano"],
-            ["Artigo", "Mapa", "Dossiê"],
-            ["Cartilha", "Materiais digitais"],
-            ["Mapa", "Artigo", "Dossiê"]
+            '["Livro","Mapa","Materiais digitais"]',
+            '["Artigo","Cartilha","Mapa","Maquete","Materiais digitais","Plano","Projeto"]',
+            '["Dossiê","Mapa","Plano","Projeto"]',
+            '["Artigo","Dossiê","Mapa","Maquete"]',
+            '["Cartilha","Materiais digitais"]',
+            '["Mapa","Materiais digitais","Dossiê","Artigo"]'
         ]
     }
     
     df = pd.DataFrame(dados)
+    
+    # Converter listas
+    df['Habilidades'] = df['Habilidades'].apply(converter_para_lista)
+    df['Áreas'] = df['Áreas'].apply(converter_para_lista)
+    df['Atividades'] = df['Atividades'].apply(converter_para_lista)
+    df['Produção'] = df['Produção'].apply(converter_para_lista)
+    
+    # Processar datas
     df['inicio_date'] = pd.to_datetime(df['Previsão de início'], format='%d/%m/%Y', errors='coerce')
     df['termino_date'] = pd.to_datetime(df['Previsão de término'], format='%d/%m/%Y', errors='coerce')
     
     return df
 
-# ===================== FUNÇÕES DE VISUALIZAÇÃO COMPLETAS =====================
+# ===================== FUNÇÕES DE VISUALIZAÇÃO =====================
 
 def show_overview(df):
-    """Visão geral do dashboard - COMPLETA"""
+    """Visão geral do dashboard"""
     st.header("📊 Visão Geral dos Projetos")
+    
+    # Debug: mostrar estrutura dos dados (remover depois que funcionar)
+    with st.expander("🔧 Debug - Verificar estrutura dos dados"):
+        st.write("**Colunas disponíveis:**", list(df.columns))
+        st.write("**Exemplo de Habilidades:**", df['Habilidades'].iloc[0] if len(df) > 0 else "Vazio")
+        st.write("**Tipo da coluna Habilidades:**", type(df['Habilidades'].iloc[0]) if len(df) > 0 else "N/A")
     
     # Métricas principais
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -225,7 +321,7 @@ def show_overview(df):
                     line=dict(width=4, color="#0066cc"),
                     marker=dict(size=10, color="#ff6600"),
                     name=nome_projeto,
-                    text=f"{row['Projeto']}<br>Início: {row['Previsão de início']}<br>Término: {row['Previsão de término'] if row['Previsão de término'] else 'Não informado'}",
+                    text=f"{row['Projeto']}<br>Início: {row['Previsão de início']}<br>Término: {row['Previsão de término'] if row.get('Previsão de término') else 'Não informado'}",
                     hoverinfo="text"
                 ))
             else:
@@ -249,7 +345,7 @@ def show_overview(df):
     )
     st.plotly_chart(fig_timeline, use_container_width=True)
     
-    # Gráfico 1: Distribuição de recursos humanos (empilhado)
+    # Gráfico de recursos humanos empilhado
     st.subheader("👥 Alocação de Recursos Humanos por Projeto")
     
     fig_stacked = go.Figure()
@@ -268,11 +364,11 @@ def show_overview(df):
     )
     st.plotly_chart(fig_stacked, use_container_width=True)
     
-    # Gráfico 2: Distribuição por categoria (pizza)
+    # Distribuição por categoria
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("👥 Distribuição por Tipo de Membro")
+        st.subheader("👥 Distribuição por Tipo")
         humanos = {
             "Graduação": df["Qtd_Graduacao"].sum(),
             "Pós-Graduação": df["Qtd_Pos"].sum(),
@@ -285,11 +381,10 @@ def show_overview(df):
             color_discrete_sequence=["#0066cc", "#ff6600", "#66cc66"],
             hole=0.3
         )
-        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     
     with col2:
-        st.subheader("💰 Distribuição por Fonte de Recurso")
+        st.subheader("💰 Distribuição por Fonte")
         fontes_counts = df["Fonte_Recurso"].value_counts().reset_index()
         fontes_counts.columns = ["Fonte", "Quantidade"]
         fig_bar = px.bar(
@@ -304,9 +399,15 @@ def show_overview(df):
         fig_bar.update_traces(textposition="outside")
         st.plotly_chart(fig_bar, use_container_width=True)
     
-    # Gráfico 3: Habilidades mais demandadas
+    # Habilidades (agora funcionando corretamente)
     st.subheader("🛠️ Habilidades Mais Demandadas")
-    all_skills = [skill for skills in df["Habilidades"] for skill in skills if skills]
+    all_skills = []
+    for skills in df["Habilidades"]:
+        if isinstance(skills, list):
+            all_skills.extend(skills)
+        elif isinstance(skills, str) and skills:
+            all_skills.extend([s.strip() for s in skills.split(';')])
+    
     if all_skills:
         skill_counts = Counter(all_skills).most_common(10)
         skill_df = pd.DataFrame(skill_counts, columns=["Habilidade", "Frequência"])
@@ -320,10 +421,18 @@ def show_overview(df):
         )
         fig_skills.update_layout(xaxis_tickangle=-45, height=450)
         st.plotly_chart(fig_skills, use_container_width=True)
+    else:
+        st.warning("Nenhuma habilidade encontrada nos dados")
     
-    # Gráfico 4: Áreas do conhecimento
+    # Áreas do conhecimento
     st.subheader("📚 Áreas do Conhecimento")
-    all_areas = [area for areas in df["Áreas"] for area in areas if areas]
+    all_areas = []
+    for areas in df["Áreas"]:
+        if isinstance(areas, list):
+            all_areas.extend(areas)
+        elif isinstance(areas, str) and areas:
+            all_areas.extend([a.strip() for a in areas.split(';')])
+    
     if all_areas:
         area_counts = Counter(all_areas).most_common()
         area_df = pd.DataFrame(area_counts, columns=["Área", "Frequência"])
@@ -338,15 +447,21 @@ def show_overview(df):
         fig_areas.update_layout(xaxis_tickangle=-45, height=450)
         st.plotly_chart(fig_areas, use_container_width=True)
     
-    # Gráfico 5: Produções previstas
-    st.subheader("📝 Produções Técnicas e Acadêmicas Previstas")
-    all_productions = [prod for prods in df["Produção"] for prod in prods if prods]
+    # Produções
+    st.subheader("📝 Produções Técnicas e Acadêmicas")
+    all_productions = []
+    for prods in df["Produção"]:
+        if isinstance(prods, list):
+            all_productions.extend(prods)
+        elif isinstance(prods, str) and prods:
+            all_productions.extend([p.strip() for p in prods.split(';')])
+    
     if all_productions:
         prod_counts = Counter(all_productions).most_common()
-        prod_df = pd.DataFrame(prod_counts, columns=["Tipo de Produção", "Quantidade"])
+        prod_df = pd.DataFrame(prod_counts, columns=["Tipo", "Quantidade"])
         fig_prod = px.bar(
             prod_df, 
-            x="Tipo de Produção", 
+            x="Tipo", 
             y="Quantidade",
             title="Tipos de Produção por Projeto",
             color="Quantidade",
@@ -355,8 +470,8 @@ def show_overview(df):
         fig_prod.update_layout(xaxis_tickangle=-45, height=450)
         st.plotly_chart(fig_prod, use_container_width=True)
     
-    # Gráfico 6: Proporção Graduação vs Pós-Graduação
-    st.subheader("⚖️ Proporção por Projeto")
+    # Proporção
+    st.subheader("⚖️ Proporção Graduação vs Pós-Graduação")
     
     total_people = df["Qtd_Graduacao"] + df["Qtd_Pos"] + df["Qtd_Docentes"]
     df_display = df.copy()
@@ -366,12 +481,18 @@ def show_overview(df):
     fig_prop = go.Figure()
     fig_prop.add_trace(go.Bar(name="% Graduação", x=df_display["Projeto"], y=df_display["% Graduação"], marker_color="#0066cc"))
     fig_prop.add_trace(go.Bar(name="% Pós-Graduação", x=df_display["Projeto"], y=df_display["% Pós-Graduação"], marker_color="#ff6600"))
-    fig_prop.update_layout(barmode="stack", title="Proporção Graduação vs Pós-Graduação", xaxis_tickangle=-45, yaxis_title="Percentual (%)")
+    fig_prop.update_layout(barmode="stack", title="Proporção por Projeto", xaxis_tickangle=-45, yaxis_title="Percentual (%)")
     st.plotly_chart(fig_prop, use_container_width=True)
     
-    # Gráfico 7: Atividades mais frequentes
+    # Atividades
     st.subheader("📋 Atividades Mais Frequentes")
-    all_activities = [act.strip().lower() for acts in df["Atividades"] for act in acts if acts]
+    all_activities = []
+    for acts in df["Atividades"]:
+        if isinstance(acts, list):
+            all_activities.extend(acts)
+        elif isinstance(acts, str) and acts:
+            all_activities.extend([a.strip().lower() for a in acts.split(';')])
+    
     if all_activities:
         activity_counts = Counter(all_activities).most_common(15)
         act_df = pd.DataFrame(activity_counts, columns=["Atividade", "Frequência"])
@@ -386,20 +507,21 @@ def show_overview(df):
         fig_act.update_layout(xaxis_tickangle=-45, height=450)
         st.plotly_chart(fig_act, use_container_width=True)
     
-    # Gráfico 8: Métricas de complexidade
+    # Complexidade
     st.subheader("📊 Métricas de Complexidade por Projeto")
     
-    df["num_habilidades"] = df["Habilidades"].apply(len)
-    df["num_areas"] = df["Áreas"].apply(len)
-    df["num_producoes"] = df["Produção"].apply(len)
-    df["num_atividades"] = df["Atividades"].apply(len)
+    df["num_habilidades"] = df["Habilidades"].apply(lambda x: len(x) if isinstance(x, list) else 0)
+    df["num_areas"] = df["Áreas"].apply(lambda x: len(x) if isinstance(x, list) else 0)
+    df["num_producoes"] = df["Produção"].apply(lambda x: len(x) if isinstance(x, list) else 0)
+    df["num_atividades"] = df["Atividades"].apply(lambda x: len(x) if isinstance(x, list) else 0)
     
     complexity_data = []
     for _, row in df.iterrows():
-        complexity_data.append({"Projeto": row["Projeto"][:30], "Métrica": "Habilidades", "Valor": row["num_habilidades"]})
-        complexity_data.append({"Projeto": row["Projeto"][:30], "Métrica": "Áreas", "Valor": row["num_areas"]})
-        complexity_data.append({"Projeto": row["Projeto"][:30], "Métrica": "Produções", "Valor": row["num_producoes"]})
-        complexity_data.append({"Projeto": row["Projeto"][:30], "Métrica": "Atividades", "Valor": row["num_atividades"]})
+        nome = row["Projeto"][:30] + "..." if len(row["Projeto"]) > 30 else row["Projeto"]
+        complexity_data.append({"Projeto": nome, "Métrica": "Habilidades", "Valor": row["num_habilidades"]})
+        complexity_data.append({"Projeto": nome, "Métrica": "Áreas", "Valor": row["num_areas"]})
+        complexity_data.append({"Projeto": nome, "Métrica": "Produções", "Valor": row["num_producoes"]})
+        complexity_data.append({"Projeto": nome, "Métrica": "Atividades", "Valor": row["num_atividades"]})
     
     complexity_df = pd.DataFrame(complexity_data)
     
@@ -408,36 +530,35 @@ def show_overview(df):
         x="Projeto",
         y="Valor",
         color="Métrica",
-        title="Complexidade por Projeto (Habilidades, Áreas, Produções, Atividades)",
+        title="Complexidade por Projeto",
         barmode="group",
         color_discrete_sequence=px.colors.qualitative.Set2
     )
     fig_complex.update_layout(xaxis_tickangle=-45, height=450)
     st.plotly_chart(fig_complex, use_container_width=True)
 
+
 def show_project_detail(df):
-    """Detalhamento por projeto - COMPLETO"""
+    """Detalhamento por projeto"""
     st.header("🔍 Detalhamento por Projeto")
     
     projetos_list = df["Projeto"].tolist()
-    selected_project = st.selectbox("Selecione um projeto para visualizar detalhes:", projetos_list)
+    selected_project = st.selectbox("Selecione um projeto:", projetos_list)
     
     project_data = df[df["Projeto"] == selected_project].iloc[0]
     
-    # Abas para organizar
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Informações Gerais", "👥 Equipe e Coordenação", "🎯 Atividades e Habilidades", "📦 Produções"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Informações Gerais", "👥 Equipe", "🎯 Atividades", "📦 Produções"])
     
     with tab1:
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.markdown(f"### {project_data['Projeto']}")
-            if 'Descrição' in project_data and project_data['Descrição']:
-                st.markdown(f"**📝 Descrição:** {project_data['Descrição']}")
+            st.markdown(f"**📝 Descrição:** {project_data['Descrição']}")
             st.markdown("---")
             st.markdown("**📅 Cronograma**")
-            st.write(f"• **Início previsto:** {project_data['Previsão de início'] if pd.notna(project_data.get('Previsão de início')) else 'Não informado'}")
-            st.write(f"• **Término previsto:** {project_data['Previsão de término'] if pd.notna(project_data.get('Previsão de término')) and project_data['Previsão de término'] else 'Não informado'}")
+            st.write(f"• **Início previsto:** {project_data['Previsão de início']}")
+            st.write(f"• **Término previsto:** {project_data['Previsão de término'] if project_data.get('Previsão de término') else 'Não informado'}")
         
         with col2:
             st.markdown("**👨‍🎓 Recursos Humanos**")
@@ -445,54 +566,62 @@ def show_project_detail(df):
             st.metric("Pós-Graduação", project_data["Qtd_Pos"])
             st.metric("Docentes", project_data["Qtd_Docentes"] if project_data["Qtd_Docentes"] > 0 else "Nenhum")
             st.markdown("---")
-            st.markdown(f"**💰 Fonte de Recurso:** {project_data['Fonte_Recurso']}")
+            st.markdown(f"**💰 Fonte:** {project_data['Fonte_Recurso']}")
     
     with tab2:
-        col1, col2 = st.columns(2)
+        st.markdown("### 👥 Equipe do Projeto")
+        equipe_list = str(project_data["Equipe"]).split(";")
+        st.markdown(f"**Total de membros:** {len(equipe_list)}")
+        for membro in equipe_list:
+            st.markdown(f"- {membro.strip()}")
         
-        with col1:
-            st.markdown("### 👥 Equipe do Projeto")
-            equipe_list = str(project_data["Equipe"]).split(";")
-            st.markdown(f"**Total de membros:** {len(equipe_list)}")
-            for membro in equipe_list:
-                st.markdown(f"- {membro.strip()}")
-        
-        with col2:
-            st.markdown("### 🎯 Coordenação")
-            coord_list = str(project_data["Coordenação"]).split(";")
-            for coord in coord_list:
-                st.markdown(f"**{coord.strip()}**")
+        st.markdown("---")
+        st.markdown("### 🎯 Coordenação")
+        coord_list = str(project_data["Coordenação"]).split(";")
+        for coord in coord_list:
+            st.markdown(f"**{coord.strip()}**")
     
     with tab3:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🛠️ Habilidades Indispensáveis")
-            for skill in project_data["Habilidades"]:
+        st.markdown("### 🛠️ Habilidades Indispensáveis")
+        habilidades = project_data["Habilidades"]
+        if isinstance(habilidades, list):
+            for skill in habilidades:
                 st.markdown(f"- {skill}")
-            
-            st.markdown("### 📚 Áreas do Conhecimento")
-            for area in project_data["Áreas"]:
-                st.markdown(f"- {area}")
+        else:
+            st.markdown(f"- {habilidades}")
         
-        with col2:
-            st.markdown("### 📋 Atividades Previstas")
-            for atividade in project_data["Atividades"]:
+        st.markdown("### 📚 Áreas do Conhecimento")
+        areas = project_data["Áreas"]
+        if isinstance(areas, list):
+            for area in areas:
+                st.markdown(f"- {area}")
+        else:
+            st.markdown(f"- {areas}")
+        
+        st.markdown("### 📋 Atividades Previstas")
+        atividades = project_data["Atividades"]
+        if isinstance(atividades, list):
+            for atividade in atividades:
                 st.markdown(f"- {atividade}")
+        else:
+            st.markdown(f"- {atividades}")
     
     with tab4:
         st.markdown("### 🎯 Produções Técnicas e Acadêmicas")
         producoes = project_data["Produção"]
-        cols = st.columns(min(len(producoes), 4))
-        for i, prod in enumerate(producoes):
-            with cols[i % 4]:
-                st.markdown(f"✅ {prod}")
+        if isinstance(producoes, list):
+            cols = st.columns(min(len(producoes), 4))
+            for i, prod in enumerate(producoes):
+                with cols[i % 4]:
+                    st.markdown(f"✅ {prod}")
+        else:
+            st.markdown(f"✅ {producoes}")
+
 
 def show_team_analysis(df):
-    """Análise de equipe - COMPLETA"""
+    """Análise de equipe"""
     st.header("👥 Análise de Equipes e Participação")
     
-    # Extrair todos os membros
     all_members = []
     for equipe in df["Equipe"]:
         members = str(equipe).split(";")
@@ -510,7 +639,7 @@ def show_team_analysis(df):
             top_df, 
             x="Nome", 
             y="Projetos",
-            title="Top 10 - Pessoas com mais participações",
+            title="Top 10 - Mais participações",
             color="Projetos",
             color_continuous_scale="Viridis"
         )
@@ -533,7 +662,6 @@ def show_team_analysis(df):
         )
         st.plotly_chart(fig_part, use_container_width=True)
     
-    # Coordenadores
     st.subheader("🎯 Coordenadores de Projetos")
     all_coords = []
     for coord in df["Coordenação"]:
@@ -552,8 +680,7 @@ def show_team_analysis(df):
     fig_coord.update_layout(xaxis_tickangle=-45)
     st.plotly_chart(fig_coord, use_container_width=True)
     
-    # Colaboração entre equipes
-    st.subheader("🤝 Colaboração entre Equipes (Top 10 Pares)")
+    st.subheader("🤝 Colaboração entre Equipes")
     
     co_occurrence = {}
     for equipe in df["Equipe"]:
@@ -581,21 +708,21 @@ def show_team_analysis(df):
             text="Pessoa 2",
             title="Pares que mais colaboram"
         )
-        fig_pairs.update_layout(height=400)
         st.plotly_chart(fig_pairs, use_container_width=True)
     
-    # Estatísticas gerais
+    # Estatísticas
     st.subheader("📈 Estatísticas da Equipe")
     stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
     
     with stats_col1:
-        st.metric("Total de Pessoas Únicas", len(member_counts))
+        st.metric("Total de Pessoas", len(member_counts))
     with stats_col2:
         st.metric("Total de Participações", sum(member_counts.values()))
     with stats_col3:
-        st.metric("Média por Pessoa", f"{sum(member_counts.values()) / len(member_counts):.1f}")
+        st.metric("Média por Pessoa", f"{sum(member_counts.values()) / len(member_counts):.1f}" if member_counts else "0")
     with stats_col4:
-        st.metric("Pessoa com mais projetos", max(member_counts, key=member_counts.get).split()[0] if member_counts else "N/A")
+        st.metric("Mais Participações", max(member_counts.values()) if member_counts else "0")
+
 
 # ===================== MAIN =====================
 
@@ -604,16 +731,11 @@ def main():
     st.caption("Sistema integrado de visualização e análise de projetos")
     st.markdown("---")
     
-    # Sidebar
     st.sidebar.header("🎛️ Navegação")
     
     view = st.sidebar.radio(
         "Escolha uma visualização:",
-        [
-            "📊 Visão Geral",
-            "🔍 Detalhe do Projeto",
-            "👥 Análise de Equipe"
-        ]
+        ["📊 Visão Geral", "🔍 Detalhe do Projeto", "👥 Análise de Equipe"]
     )
     
     st.sidebar.markdown("---")
@@ -622,27 +744,23 @@ def main():
         "Este dashboard apresenta informações consolidadas "
         "dos projetos, permitindo análise de equipes, "
         "recursos e demandas.\n\n"
-        "📁 **Fonte dos dados:** CSV carregado do GitHub\n"
-        "🔄 **Atualização:** Automática a cada hora"
+        "📁 **Fonte:** CSV do GitHub\n"
+        "🔄 **Atualização:** A cada hora"
     )
     
-    # Botão para recarregar
-    if st.sidebar.button("🔄 Forçar Recarregamento dos Dados"):
+    if st.sidebar.button("🔄 Recarregar Dados"):
         st.cache_data.clear()
         st.rerun()
     
-    # Carregar dados
     with st.spinner("Carregando dados..."):
         df = carregar_csv_github()
     
-    # Mostrar informações na sidebar
     if df is not None and len(df) > 0:
         st.sidebar.markdown("---")
-        st.sidebar.subheader("📈 Estatísticas Atuais")
-        st.sidebar.metric("Projetos Carregados", len(df))
-        st.sidebar.metric("Total Envolvidos", df["Qtd_Graduacao"].sum() + df["Qtd_Pos"].sum() + df["Qtd_Docentes"].sum())
+        st.sidebar.subheader("📈 Estatísticas")
+        st.sidebar.metric("Projetos", len(df))
+        st.sidebar.metric("Envolvidos", df["Qtd_Graduacao"].sum() + df["Qtd_Pos"].sum() + df["Qtd_Docentes"].sum())
     
-    # Exibir visualização
     if view == "📊 Visão Geral":
         show_overview(df)
     elif view == "🔍 Detalhe do Projeto":
@@ -650,9 +768,9 @@ def main():
     elif view == "👥 Análise de Equipe":
         show_team_analysis(df)
     
-    # Footer
     st.markdown("---")
-    st.caption("📅 Dados atualizados via GitHub | 🔄 Atualização automática a cada hora | 🚀 Desenvolvido com Streamlit")
+    st.caption("📅 Dados via GitHub | 🔄 Atualização automática")
+
 
 if __name__ == "__main__":
     main()
