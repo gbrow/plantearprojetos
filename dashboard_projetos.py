@@ -24,7 +24,7 @@ def carregar_csv_github():
     # URL RAW do seu CSV no GitHub
     # Substitua pela URL do SEU arquivo!
     # Como pegar: Vá no GitHub → Seu arquivo CSV → Botão "Raw" → Copie a URL
-    URL_CSV = "https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPOSITORIO/main/dados/projetos.csv"
+    URL_CSV = "https://raw.githubusercontent.com/gbrow/plantearprojetos/refs/heads/main/dados/projetos.csv"
     
     try:
         # Baixar o arquivo
