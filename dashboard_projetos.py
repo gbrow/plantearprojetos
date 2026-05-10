@@ -343,7 +343,7 @@ def show_overview(df):
         showlegend=False,
         hovermode="closest"
     )
-    st.plotly_chart(fig_timeline, use_container_width=True)
+    st.plotly_chart(fig_timeline, width='stretch')
     
     # Gráfico de recursos humanos empilhado
     st.subheader("👥 Alocação de Recursos Humanos por Projeto")
@@ -362,7 +362,7 @@ def show_overview(df):
         height=450,
         legend_title="Categoria"
     )
-    st.plotly_chart(fig_stacked, use_container_width=True)
+    st.plotly_chart(fig_stacked, width="stretch")
     
     # Distribuição por categoria
     col1, col2 = st.columns(2)
@@ -381,7 +381,7 @@ def show_overview(df):
             color_discrete_sequence=["#0066cc", "#ff6600", "#66cc66"],
             hole=0.3
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
     
     with col2:
         st.subheader("💰 Distribuição por Fonte")
@@ -397,7 +397,7 @@ def show_overview(df):
             text="Quantidade"
         )
         fig_bar.update_traces(textposition="outside")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
     
     # Habilidades (agora funcionando corretamente)
     st.subheader("🛠️ Habilidades Mais Demandadas")
@@ -633,7 +633,7 @@ def show_team_analysis(df):
     
     with col1:
         st.subheader("🏆 Pessoas com Mais Projetos")
-        top_members = member_counts.most_common(10)
+        top_members = member_counts #.most_common(10)
         top_df = pd.DataFrame(top_members, columns=["Nome", "Projetos"])
         fig_top = px.bar(
             top_df, 
