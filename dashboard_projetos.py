@@ -420,7 +420,7 @@ def show_overview(df):
             color_continuous_scale="Viridis"
         )
         fig_skills.update_layout(xaxis_tickangle=-45, height=450)
-        st.plotly_chart(fig_skills, use_container_width=True)
+        st.plotly_chart(fig_skills, width="stretch")
     else:
         st.warning("Nenhuma habilidade encontrada nos dados")
     
@@ -445,7 +445,7 @@ def show_overview(df):
             color_continuous_scale="Oranges"
         )
         fig_areas.update_layout(xaxis_tickangle=-45, height=450)
-        st.plotly_chart(fig_areas, use_container_width=True)
+        st.plotly_chart(fig_areas, width="stretch")
     
     # Produções
     st.subheader("📝 Produções Técnicas e Acadêmicas")
@@ -468,7 +468,7 @@ def show_overview(df):
             color_continuous_scale="Greens"
         )
         fig_prod.update_layout(xaxis_tickangle=-45, height=450)
-        st.plotly_chart(fig_prod, use_container_width=True)
+        st.plotly_chart(fig_prod, width="stretch")
     
     # Proporção
     st.subheader("⚖️ Proporção Graduação vs Pós-Graduação")
@@ -482,7 +482,7 @@ def show_overview(df):
     fig_prop.add_trace(go.Bar(name="% Graduação", x=df_display["Projeto"], y=df_display["% Graduação"], marker_color="#0066cc"))
     fig_prop.add_trace(go.Bar(name="% Pós-Graduação", x=df_display["Projeto"], y=df_display["% Pós-Graduação"], marker_color="#ff6600"))
     fig_prop.update_layout(barmode="stack", title="Proporção por Projeto", xaxis_tickangle=-45, yaxis_title="Percentual (%)")
-    st.plotly_chart(fig_prop, use_container_width=True)
+    st.plotly_chart(fig_prop, width="stretch")
     
     # Atividades
     # st.subheader("📋 Atividades Mais Frequentes")
@@ -505,7 +505,7 @@ def show_overview(df):
     #         color_continuous_scale="Purples"
     #     )
     #     fig_act.update_layout(xaxis_tickangle=-45, height=450)
-    #     st.plotly_chart(fig_act, use_container_width=True)
+    #     st.plotly_chart(fig_act, width="stretch")
     
     # Complexidade
     st.subheader("📊 Métricas de Complexidade por Projeto")
@@ -535,7 +535,7 @@ def show_overview(df):
         color_discrete_sequence=px.colors.qualitative.Set2
     )
     fig_complex.update_layout(xaxis_tickangle=-45, height=450)
-    st.plotly_chart(fig_complex, use_container_width=True)
+    st.plotly_chart(fig_complex, width="stretch")
 
 
 def show_project_detail(df):
@@ -632,19 +632,19 @@ def show_team_analysis(df):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("🏆 Pessoas com Mais Projetos")
-        top_members = member_counts #.most_common(10)
+        st.subheader("Projetos por pessoa")
+        top_members = member_counts.most_common(None)
         top_df = pd.DataFrame(top_members, columns=["Nome", "Projetos"])
         fig_top = px.bar(
             top_df, 
             x="Nome", 
             y="Projetos",
-            title="Top 10 - Mais participações",
+            title="Participações em projetos",
             color="Projetos",
             color_continuous_scale="Viridis"
         )
         fig_top.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_top, use_container_width=True)
+        st.plotly_chart(fig_top, width="stretch")
     
     with col2:
         st.subheader("📊 Distribuição de Participação")
@@ -660,7 +660,7 @@ def show_team_analysis(df):
             color_discrete_sequence=px.colors.sequential.Blues_r,
             hole=0.3
         )
-        st.plotly_chart(fig_part, use_container_width=True)
+        st.plotly_chart(fig_part, width="stretch")
     
     st.subheader("🎯 Coordenadores de Projetos")
     all_coords = []
@@ -678,7 +678,7 @@ def show_team_analysis(df):
         color_continuous_scale="Reds"
     )
     fig_coord.update_layout(xaxis_tickangle=-45)
-    st.plotly_chart(fig_coord, use_container_width=True)
+    st.plotly_chart(fig_coord, width="stretch")
     
     st.subheader("🤝 Colaboração entre Equipes")
     
@@ -690,7 +690,7 @@ def show_team_analysis(df):
                 key = tuple(sorted([m1, m2]))
                 co_occurrence[key] = co_occurrence.get(key, 0) + 1
     
-    top_pairs = sorted(co_occurrence.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_pairs = sorted(co_occurrence.items(), key=lambda x: x[1], reverse=True)#[:10]
     pair_data = []
     for (p1, p2), count in top_pairs:
         nome1 = p1.split()[0] if " " in p1 else p1
@@ -706,9 +706,9 @@ def show_team_analysis(df):
             color="Projetos Juntos",
             orientation='h',
             text="Pessoa 2",
-            title="Pares que mais colaboram"
+            title="Colaboração entre pessoas"
         )
-        st.plotly_chart(fig_pairs, use_container_width=True)
+        st.plotly_chart(fig_pairs, width="stretch", height=600)
     
     # Estatísticas
     st.subheader("📈 Estatísticas da Equipe")
