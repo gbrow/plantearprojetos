@@ -742,15 +742,13 @@ def main():
     st.sidebar.subheader("📊 Sobre")
     st.sidebar.info(
         "Este dashboard apresenta informações consolidadas "
-        "dos projetos, permitindo análise de equipes, "
-        "recursos e demandas.\n\n"
-        "📁 **Fonte:** CSV do GitHub\n"
-        "🔄 **Atualização:** A cada hora"
+        "dos projetos, a partir dos dados exportados"
+        "da lista de projetos do Plantear.\n\n"
     )
     
-    if st.sidebar.button("🔄 Recarregar Dados"):
-        st.cache_data.clear()
-        st.rerun()
+    #if st.sidebar.button("🔄 Recarregar Dados"):
+    #    st.cache_data.clear()
+    #    st.rerun()
     
     with st.spinner("Carregando dados..."):
         df = carregar_csv_github()
